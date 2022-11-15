@@ -11,13 +11,19 @@ from astropy.table import Table
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
-
+import astropy.coordinates as ap_coor
 import pandas as pd
 import sys
 from astropy import units as u
 from astropy.coordinates import SkyCoord
-from astropy.table import QTable
-from astropy.table import Column
+from scipy.stats import gaussian_kde
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import KDTree
+from sklearn.preprocessing import StandardScaler
+from matplotlib.ticker import FormatStrFormatter
+
+import math
 # %%plotting parametres
 rcParams.update({'xtick.major.pad': '7.0'})
 rcParams.update({'xtick.major.size': '7.5'})
@@ -95,6 +101,7 @@ gns_match = gns_center[idx[sep_constraint]]
 
 
 # %%
+# Here we trimmed the data making juts a cut in the pms
 save_A = np.array([hst_center['Ra'],	hst_center['Dec'],	hst_center['vx_final'],	hst_center['vy_final'],	hst_center['vxe_final'],	hst_center['vye_final'],	gns_match[:,20],gns_match[:,22]]).T
 np.savetxt(pruebas + 'hosek_center.txt',save_A,fmt = '%.8f', header = 'Ra Dec vx_final vy_final vxe_final vxe_final H Ks') 
 # PM in galactic
@@ -122,18 +129,8 @@ save_B = np.array([hst_trim['Ra'],	hst_trim['Dec'],	hst_trim['vx_final'],	hst_tr
 np.savetxt(pruebas + 'hosek_center_trim.txt',save_B,fmt = '%.8f', header = 'Ra Dec vx_final vy_final vxe_final vxe_final H Ks') 
 # sys.exit('123')
 
-
 # %%
-# alpha =1
-# fig, ax = plt.subplots(1,2,figsize=(20,10))
-# ax[0].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vxe_final'][pm_gal_ecut], alpha = alpha)
-# ax[0].set_ylabel('error_vx (arscec/yr)')
-# ax[0].set_xlabel('F139M')
-# ax[1].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vye_final'][pm_gal_ecut], alpha = alpha)
-# ax[1].set_ylabel('error_vy (arscec/yr)')
-# ax[1].set_xlabel('F139M')
-
-# %%
+# Here the data is trimming by magnitudes bins
 vxy_e = np.sqrt(hst_center['vxe_final']**2 + hst_center['vye_final']**2)
 ve_i_valid = []
 paso = 1
@@ -156,10 +153,14 @@ for i in range(min(mag_b),(max(mag_b)+1)):
         
 hst_trimB = hst_center[ve_i_valid]
 H_trimm, Ks_trimm = gns_match[:,20][ve_i_valid],gns_match[:,22][ve_i_valid]
-save_C = np.array([hst_trimB['Ra'],	hst_trimB['Dec'], hst_trimB['x0_final'],hst_trimB['y0_final'],
+pm = np.array([hst_trimB['Ra'],	hst_trimB['Dec'], hst_trimB['x0_final'],hst_trimB['y0_final'],
                    hst_trimB['vx_final'], hst_trimB['vy_final'],	hst_trimB['vxe_final'],	hst_trimB['vye_final'],
+                   pm_gal.l.value[ve_i_valid],
+                   pm_gal.b.value[ve_i_valid],
+                   pm_gal.pm_l_cosb.value[ve_i_valid],
+                   pm_gal.pm_b.value[ve_i_valid],
                    H_trimm, Ks_trimm]).T
-np.savetxt(pruebas + 'hosek_center_trimB.txt',save_C,fmt = '%.8f', header = 'Ra Dec x y vx_final vy_final vxe_final vxe_final H Ks') 
+np.savetxt(pruebas + 'hosek_center_trimB.txt',pm,fmt = '%.8f', header = 'Ra Dec x y vx_final vy_final vxe_final vxe_final l b mul mub H Ks') 
 
 # %
 fig, ax = plt.subplots(1,2, figsize = (20,10))
@@ -174,19 +175,237 @@ ax[0].legend()
 ax[1].legend()
 ax[0].set_title('Center Stars: %s. After trimming: %s'%(len(hst_center),len(ve_i_valid)))
 # %%
-# alpha =1
-# fig, ax = plt.subplots(1,2,figsize=(20,10))
-# ax[0].scatter(hst_center['F139M_ave'][ve_i_valid],hst_center['vxe_final'][ve_i_valid], alpha = alpha)
-# ax[0].set_ylabel('error_vx (arscec/yr)')
-# ax[0].set_xlabel('F139M')
-# ax[1].scatter(hst_center['F139M_ave'][ve_i_valid],hst_center['vye_final'][ve_i_valid], alpha = alpha)
-# ax[1].set_ylabel('error_vy (arscec/yr)')
-# ax[1].set_xlabel('F139M')
-# ax[0].set_title('Center Stars: %s. After trimming: %s'%(len(hst_center),len(ve_i_valid)))
-
-
-
-
+alpha =1
+fig, ax = plt.subplots(1,2,figsize=(20,10))
+ax[0].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vxe_final'][pm_gal_ecut], alpha = alpha)
+ax[0].set_ylabel('error_vx (arscec/yr)')
+ax[0].set_xlabel('F139M')
+ax[1].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vye_final'][pm_gal_ecut], alpha = alpha)
+ax[1].set_ylabel('error_vy (arscec/yr)')
+ax[1].set_xlabel('F139M')
 # %%
-print( hst_trimB['x0_final'])
+clust_cand = np.loadtxt('/Users/amartinez/Desktop/PhD/Libralato_data/good_clusters/Sec_B_dmu1_at_minimun_2022-08-30_cluster_num32_2_knn10_area7.49/cluster32_0_0_knn_10_area_7.49_all_color.txt')
+cand_coord = SkyCoord(ra = clust_cand[:,0]*u.deg, dec = clust_cand[:,1]*u.deg, frame ='icrs', equinox = 'J2000', obstime = 'J2015.5')
+
+color = pd.read_csv('/Users/amartinez/Desktop/PhD/python/colors_html.csv')
+strin= color.values.tolist()
+indices = np.arange(0,len(strin),1)
+# divis_list = [1,2,3]#TODO
+divis_list = [1,2]#TODO
+
+samples_list =[10,9,8,7,6,5]#TODO
+# samples_list =[8]#TODO
+sim_lim = 'mean'#TODO options: minimun or mean
+gen_sim ='Kernnel'#TODO it is not yet implemented shuffle
+clustered_by = 'pm_color'#Reminiscent of a previous script
+cluster_by = 'pm'
+clus_num = 0
+
+m = (18-108)/(-100.3-1)#Points of a parallel line to the edge of the data
+m1 = (-88 - 7)/(-23--102)
+lim_pos_up, lim_pos_down = 18-m*(-100.3), -65 #intersection of the positives slopes lines with y axis,
+lim_neg_up, lim_neg_down =110,-88-m1*(-23) #intersection of the negayives slopes lines with y axis,
+
+# distancia entre yg_up e yg_down
+dist_pos = abs(lim_pos_down-lim_pos_up)/np.sqrt((m)**2+(-1)**2)
+dist_neg = abs(lim_neg_down-lim_neg_up)/np.sqrt((m1)**2+(-1)**2)
+ang = math.degrees(np.arctan(m))
+ang1 = math.degrees(np.arctan(m1))
+sys.exit()
+#   0  1  2 3   4          5        6         7     8 9 10  11 12 13
+# 'Ra Dec x y vx_final vy_final vxe_final vxe_final l b mul mub H Ks'
+for div in range(len(divis_list)):
+    divis = divis_list[div]
+    xg = np.linspace(min(pm[:,2]),max(pm[:,2]),(divis+1)*2-1)
+    yg = np.linspace(min(pm[:,3]),max(pm[:,3]),(divis+1)*2-1)
+    for sd in range(len(samples_list)):
+        samples_dist = samples_list[sd]
+        for xi in range(len(xg)-2):
+            for yi in range(len(xg)-2):
+                fig, ax = plt.subplots(1,1)
+                ax.scatter(pm[:,2],pm[:,3],color ='k',alpha=0.1)
+                valid = np.where((pm[:,2] < xg[xi+2])
+                                 & (pm[:,2] >xg[xi]) 
+                                 & (pm[:,3] < yg[yi+2]) 
+                                 & (pm[:,3] >yg[yi]))
+                pm_sub = pm[valid]
+                ax.scatter(pm_sub[:,2],pm_sub[:,3],s =5,color=strin[np.random.choice(indices)] )
+                coordenadas = SkyCoord(ra=pm_sub[:,0]*u.degree, dec=pm_sub[:,1]*u.degree,frame ='icrs', equinox = 'J2000', obstime = 'J2015.6')#
+                mul,mub = pm_sub[:,8],pm_sub[:,9]
+                x,y = pm_sub[:,2], pm_sub[:,3]
+                colorines = pm_sub[:,10]-pm_sub[:,11]
+                H_datos, K_datos = pm_sub[:,10], pm_sub[:,11]
+                
+                area = (xg[xi+1]- xg[xi])*(yg[yi+1]- yg[yi])*0.05**2/3600
+                mul_kernel, mub_kernel = gaussian_kde(mul), gaussian_kde(mub)
+                x_kernel, y_kernel = gaussian_kde(x), gaussian_kde(y)
+                color_kernel = gaussian_kde(colorines)
+        
+                X=np.array([mul,mub,x,y,colorines]).T
+                X_stad = StandardScaler().fit_transform(X)
+                tree = KDTree(X_stad, leaf_size=2) 
+                    
+               
+                dist, ind = tree.query(X_stad, k=samples_dist) #DistNnce to the 1,2,3...k neighbour
+                d_KNN=sorted(dist[:,-1])#distance to the Kth neighbour
+                lst_d_KNN_sim = []
+                for d in range(5):
+                    mub_sim,  mul_sim = mub_kernel.resample(len(pm_sub)), mul_kernel.resample(len(pm_sub))
+                    x_sim, y_sim = x_kernel.resample(len(pm_sub)), y_kernel.resample(len(pm_sub))
+                    color_sim = color_kernel.resample(len(pm_sub))
+                    X_sim=np.array([mul_sim[0],mub_sim[0],x_sim[0],y_sim[0],color_sim[0]]).T
+                    X_stad_sim = StandardScaler().fit_transform(X_sim)
+                    tree_sim =  KDTree(X_stad_sim, leaf_size=2)
+                    
+                    dist_sim, ind_sim = tree_sim.query(X_stad_sim, k=samples_dist) #DistNnce to the 1,2,3...k neighbour
+                    d_KNN_sim=sorted(dist_sim[:,-1])#distance to the Kth neighbour
+                    
+                    lst_d_KNN_sim.append(min(d_KNN_sim))
+                d_KNN_sim_av = np.mean(lst_d_KNN_sim)
+                fig, ax = plt.subplots(1,1,figsize=(10,10))
+                ax.hist(d_KNN,bins ='auto',histtype ='step',color = 'k')
+                ax.hist(d_KNN_sim,bins ='auto',histtype ='step',color = 'r')
+                ax.set_xlabel('%s-NN distance'%(samples_dist)) 
+                
+                if sim_lim == 'mean':
+                    eps_av = round((min(d_KNN)+d_KNN_sim_av)/2,3)
+                    valor = d_KNN_sim_av
+                elif sim_lim == 'minimun':
+                    eps_av = round((min(d_KNN)+min(lst_d_KNN_sim))/2,3)
+                    valor = min(lst_d_KNN_sim)
+                texto = '\n'.join(('min real d_KNN = %s'%(round(min(d_KNN),3)),
+                                'min sim d_KNN =%s'%(round(valor,3)),
+                                'average = %s'%(eps_av),'%s'%(sim_lim),'%s'%(gen_sim)))
+                
+                props = dict(boxstyle='round', facecolor='w', alpha=0.5)
+                # place a text box in upper left in axes coords
+                ax.text(0.65, 0.25, texto, transform=ax.transAxes, fontsize=20,
+                    verticalalignment='top', bbox=props)
+                
+                ax.set_ylabel('N') 
+                
+                clustering = DBSCAN(eps=eps_av, min_samples=samples_dist).fit(X_stad)
+                l=clustering.labels_
+                
+                n_clusters = len(set(l)) - (1 if -1 in l else 0)
+                # print('Group %s.Number of cluster, eps=%s and min_sambles=%s: %s'%(group,round(epsilon,2),samples,n_clusters))
+                n_noise=list(l).count(-1)
+                # %
+                u_labels = set(l)
+                colors=[plt.cm.rainbow(i) for i in np.linspace(0,1,len(set(l)))]# Returns a color for each cluster. Each color consists in four number, RGBA, red, green, blue and alpha. Full opacity black would be then 0,0,0,1
+                # %
+                
+                # %
+                for k in range(len(colors)): #give noise color black with opacity 0.1
+                    if list(u_labels)[k] == -1:
+                        colors[k]=[0,0,0,0.1]
+                # %      
+                colores_index=[]
+                
+                for c in u_labels:
+                    cl_color=np.where(l==c)
+                    colores_index.append(cl_color)
+
+                for i in range(len(set(l))-1):
+                    # ax[0].scatter(pm_sub[:,2][colores_index[i]], pm_sub[:,3][colores_index[i]], color = 'orange')
+                    c2 = SkyCoord(ra = pm_sub[:,0][colores_index[i]],dec = pm_sub[:,1][colores_index[i]], unit ='degree',  equinox = 'J2000', obstime = 'J2015.4')
+                    fig, ax = plt.subplots(1,3,figsize=(30,10))
+                    color_de_cluster = 'lime'
+                    # fig, ax = plt.subplots(1,3,figsize=(30,10))
+                    # ax[2].invert_yaxis()
+                   
+                    ax[0].set_title('Min %s-NN= %s. cluster by: %s '%(samples_dist,round(min(d_KNN),3),clustered_by))
+                    # t_gal['l'] = t_gal['l'].wrap_at('180d')
+                    ax[0].scatter(X[:,0][colores_index[-1]],X[:,1][colores_index[-1]], color=colors[-1],s=50,zorder=1)
+                    ax[0].scatter(X[:,0],X[:,1], color=colors[-1],s=50,zorder=1)
+                    # ax[1].quiver(t_gal['l'][colores_index[-1]].value,t_gal['b'][colores_index[-1]].value, X[:,0][colores_index[-1]]-pms[2], X[:,1][colores_index[-1]]-pms[3], alpha=0.5, color=colors[-1])
+                
+                    ax[0].scatter(X[:,0][colores_index[i]],X[:,1][colores_index[i]], color=color_de_cluster ,s=50,zorder=3)
+                    # ax[0].set_xlim(-10,10)
+                    # ax[0].set_ylim(-10,10)
+                    ax[0].set_xlabel(r'$\mathrm{\mu_{l} (mas\ yr^{-1})}$',fontsize =30) 
+                    ax[0].set_ylabel(r'$\mathrm{\mu_{b} (mas\ yr^{-1})}$',fontsize =30) 
+                    ax[0].invert_xaxis()
+                    
+                    mul_sig, mub_sig = np.std(X[:,0][colores_index[i]]), np.std(X[:,1][colores_index[i]])
+                    mul_mean, mub_mean = np.mean(X[:,0][colores_index[i]]), np.mean(X[:,1][colores_index[i]])
+                    
+                    mul_sig_all, mub_sig_all = np.std(X[:,0]), np.std(X[:,1])
+                    mul_mean_all, mub_mean_all = np.mean(X[:,0]), np.mean(X[:,1])
+                     
+                    ax[0].axvline(mul_mean_all, color ='red')
+                    ax[0].axhline(mub_mean_all, color ='red')
+                    
+                    ax[0].axvline(mul_mean_all + mul_sig_all,linestyle = 'dashed', color ='red')
+                    ax[0].axvline(mul_mean_all - mul_sig_all,linestyle = 'dashed', color ='red')
+                    
+                    ax[0].axhline(mub_mean_all + mub_sig_all,linestyle = 'dashed', color ='red')
+                    ax[0].axhline(mub_mean_all - mub_sig_all,linestyle = 'dashed', color ='red')
+                
+                    vel_txt = '\n'.join(('mul = %s, mub = %s'%(round(mul_mean,3), round(mub_mean,3)),
+                                         '$\sigma_{mul}$ = %s, $\sigma_{mub}$ = %s'%(round(mul_sig,3), round(mub_sig,3)))) 
+                    vel_txt_all = '\n'.join(('mul = %s, mub = %s'%(round(mul_mean_all,3), round(mub_mean_all,3)),
+                                         '$\sigma_{mul}$ = %s, $\sigma_{mub}$ = %s'%(round(mul_sig_all,3), round(mub_sig_all,3))))
+                    
+                    propiedades = dict(boxstyle='round', facecolor=color_de_cluster , alpha=0.2)
+                    propiedades_all = dict(boxstyle='round', facecolor=colors[-1], alpha=0.1)
+                    ax[0].text(0.05, 0.95, vel_txt, transform=ax[0].transAxes, fontsize=30,
+                        verticalalignment='top', bbox=propiedades)
+                    ax[0].text(0.05, 0.15, vel_txt_all, transform=ax[0].transAxes, fontsize=20,
+                        verticalalignment='top', bbox=propiedades_all)   
+                    #This calcualte the maximun distance between cluster members to have a stimation of the cluster radio
+                    sep = [max(c2[c_mem].separation(c2)) for c_mem in range(len(c2))]
+                    rad = max(sep)/2
+                    
+                    m_point = SkyCoord(ra =[np.mean(c2.ra)], dec = [np.mean(c2.dec)],frame ='icrs', equinox = 'J2000', obstime = 'J2022.4')             
+                    idxc, group_md, d2d,d3d =  ap_coor.search_around_sky(m_point,coordenadas, rad*2)
+                    
+                    ax[0].scatter(mul[group_md],mub[group_md], color='red',s=50,zorder=1,marker='x',alpha = 0.7)
+                
+                    prop = dict(boxstyle='round', facecolor=color_de_cluster , alpha=0.2)
+                    ax[1].text(0.15, 0.95, 'aprox cluster radio = %s"\n cluster stars = %s '%(round(rad.to(u.arcsec).value,2),len(colores_index[i][0])), transform=ax[1].transAxes, fontsize=30,
+                                            verticalalignment='top', bbox=prop)
+                    # ax[1].scatter(MS_coord.ra, MS_coord.dec, s=20, color ='b', marker ='.')
+                    ax[1].scatter(pm_sub[:,0], pm_sub[:,1], color='k',s=50,zorder=1,alpha=0.1)#
+                    # ax[1].scatter(datos[:,5],datos[:,6],color='k' ,s=50,zorder=1,alpha=0.01)
+                    ax[1].scatter(pm_sub[:,0][colores_index[i]],pm_sub[:,1][colores_index[i]],color=color_de_cluster ,s=50,zorder=3)
+                
+                    ax[1].scatter(pm_sub[:,0][group_md],pm_sub[:,1][group_md],s=50,color='r',alpha =0.1,marker ='x')
+                    ax[1].set_xlabel('Ra(deg)',fontsize =30) 
+                    ax[1].set_ylabel('Dec(deg)',fontsize =30) 
+                    ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+                    ax[1].xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+                    ax[1].set_title('Area_%s_%s =%.2f $arcmin^{2}$'%(xi,yi,area))
+                    
+                    for cand_star in range(len(cand_coord)):
+                        sep_cand = c2.separation(cand_coord[cand_star])
+                        if min(sep_cand.value) <1/3600:
+                            print('SOMETHING is CLOSE!')
+                            ax[1].scatter(cand_coord.ra, cand_coord.dec,color ='b',s =80,marker ='x',zorder =3)
+                            ax[0].set_facecolor('lavender')
+                            ax[1].set_facecolor('lavender')
+                            ax[2].set_facecolor('lavender')
+# %%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
