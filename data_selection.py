@@ -101,88 +101,103 @@ gns_match = gns_center[idx[sep_constraint]]
 
 
 # %%
-# Here we trimmed the data making juts a cut in the pms
-save_A = np.array([hst_center['Ra'],	hst_center['Dec'],	hst_center['vx_final'],	hst_center['vy_final'],	hst_center['vxe_final'],	hst_center['vye_final'],	gns_match[:,20],gns_match[:,22]]).T
-np.savetxt(pruebas + 'hosek_center.txt',save_A,fmt = '%.8f', header = 'Ra Dec vx_final vy_final vxe_final vxe_final H Ks') 
-# PM in galactic
+# Choose a way of trimm for good data: A or B
+# A: just a cut in velocities uncertainties
+# B: cut from the 85th percentile up in each magbin
 pm_gal = SkyCoord(ra = hst_center['Ra'], dec = hst_center['Dec'], unit = 'degree',
                   pm_ra_cosdec = hst_center['vx_final']*u.arcsec/u.yr, pm_dec = hst_center['vy_final']*u.arcsec/u.yr,
                   frame = 'icrs', equinox = 'J2000', obstime = 'J2015.6').galactic
 
-# %
-pm_gal_ecut = np.where(np.sqrt(hst_center['vxe_final']**2 + hst_center['vye_final']**2) <0.002)
-pm_gal_cut = pm_gal[pm_gal_ecut]
-hst_trim = hst_center[pm_gal_ecut]
-fig, ax = plt.subplots(1,2, figsize = (20,10))
-bins=30
-ax[0].hist(pm_gal_cut.pm_l_cosb.value, bins=bins,
-           label = '$\overline{\mu_{l}}$ =%.3f\n$\sigma_{l}$ =%.3f'%(np.mean(pm_gal_cut.pm_l_cosb.value),np.std(pm_gal_cut.pm_l_cosb.value)), color = 'orange')
-ax[1].hist(pm_gal_cut.pm_b.value, bins=bins,
-           label = '$\overline{\mu_{b}}$ =%.3f\n$\sigma_{b}$ =%.3f'%(np.mean(pm_gal_cut.pm_b.value),np.std(pm_gal_cut.pm_b.value)), color = 'orange')
-ax[0].axvline(np.mean(pm_gal_cut.pm_l_cosb.value), color ='red')
-ax[1].axvline(np.mean(pm_gal_cut.pm_b.value), color ='red')
-ax[0].legend()
-ax[1].legend()
-ax[0].set_title('Center Stars: %s. After trimming: %s'%(len(hst_center),len(pm_gal_cut.pm_l_cosb.value)))
-
-save_B = np.array([hst_trim['Ra'],	hst_trim['Dec'],	hst_trim['vx_final'],	hst_trim['vy_final'],	hst_trim['vxe_final'],	hst_trim['vye_final']]).T
-np.savetxt(pruebas + 'hosek_center_trim.txt',save_B,fmt = '%.8f', header = 'Ra Dec vx_final vy_final vxe_final vxe_final H Ks') 
-# sys.exit('123')
-
+trimm_way = 'A'
+if trimm_way == 'A':
+    
+    # Here we trimmed the data making juts a cut in the pms
+    save_A = np.array([hst_center['Ra'],	hst_center['Dec'],	hst_center['vx_final'],	hst_center['vy_final'],	hst_center['vxe_final'],	hst_center['vye_final'],	gns_match[:,20],gns_match[:,22]]).T
+    np.savetxt(pruebas + 'hosek_center.txt',save_A,fmt = '%.8f', header = 'Ra Dec vx_final vy_final vxe_final vxe_final H Ks') 
+    # PM in galactic
+    
+    # %
+    pm_gal_ecut = np.where(np.sqrt(hst_center['vxe_final']**2 + hst_center['vye_final']**2) <0.002)
+    pm_gal_cut = pm_gal[pm_gal_ecut]
+    hst_trim = hst_center[pm_gal_ecut]
+    fig, ax = plt.subplots(1,2, figsize = (20,10))
+    bins=30
+    ax[0].hist(pm_gal_cut.pm_l_cosb.value, bins=bins,
+               label = '$\overline{\mu_{l}}$ =%.3f\n$\sigma_{l}$ =%.3f'%(np.mean(pm_gal_cut.pm_l_cosb.value),np.std(pm_gal_cut.pm_l_cosb.value)), color = 'orange')
+    ax[1].hist(pm_gal_cut.pm_b.value, bins=bins,
+               label = '$\overline{\mu_{b}}$ =%.3f\n$\sigma_{b}$ =%.3f'%(np.mean(pm_gal_cut.pm_b.value),np.std(pm_gal_cut.pm_b.value)), color = 'orange')
+    ax[0].axvline(np.mean(pm_gal_cut.pm_l_cosb.value), color ='red')
+    ax[1].axvline(np.mean(pm_gal_cut.pm_b.value), color ='red')
+    ax[0].legend()
+    ax[1].legend()
+    ax[0].set_title('Center Stars: %s. After trimming: %s'%(len(hst_center),len(pm_gal_cut.pm_l_cosb.value)))
+    H_trimm, Ks_trimm = gns_match[:,20][pm_gal_ecut],gns_match[:,22][pm_gal_ecut]
+    pm = np.array([hst_trim['Ra'],	hst_trim['Dec'],
+                   	  hst_trim['x_orig'][:,1],	hst_trim['y_orig'][:,1]
+                       ,	hst_trim['vx_final'],	hst_trim['vy_final'],	
+                       hst_trim['vxe_final'],	hst_trim['vye_final'],
+                       pm_gal_cut.l.value,
+                       pm_gal_cut.b.value,
+                       pm_gal_cut.pm_l_cosb.value,
+                       pm_gal_cut.pm_b.value,
+                       H_trimm, Ks_trimm]).T
+    np.savetxt(pruebas + 'hosek_center_trimA.txt',pm,fmt = '%.8f', header = 'Ra Dec x y vx_final vy_final vxe_final vye_final l b mul mub H Ks') 
+    alpha =1
+    fig, ax = plt.subplots(1,2,figsize=(20,10))
+    ax[0].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vxe_final'][pm_gal_ecut], alpha = alpha)
+    ax[0].set_ylabel('error_vx (arscec/yr)')
+    ax[0].set_xlabel('F139M')
+    ax[1].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vye_final'][pm_gal_ecut], alpha = alpha)
+    ax[1].set_ylabel('error_vy (arscec/yr)')
+    ax[1].set_xlabel('F139M')
 # %%
-# Here the data is trimming by magnitudes bins
-vxy_e = np.sqrt(hst_center['vxe_final']**2 + hst_center['vye_final']**2)
-ve_i_valid = []
-paso = 1
-vx_lim = 0.0025
-perc_good = 85
-mag_b=np.digitize(hst_center['F139M_ave'], np.arange(np.round(min(hst_center['F139M_ave'])),np.round(max(hst_center['F139M_ave'])+1),paso), right=True)
-
-for i in range(min(mag_b),(max(mag_b)+1)):
-    try:
-        mag_binned=np.where(mag_b==i)
-        ve_i=vxy_e[mag_binned]
-        print('%.5f'%(np.percentile(ve_i,perc_good)),i,len(ve_i),len(mag_binned[0]))
-        perc = np.percentile(ve_i,perc_good)
-        for j in range(len(ve_i)):
-            if ve_i[j] < vx_lim:
-                if ve_i[j] <= perc or ve_i[j] <= 0.002:
-                    ve_i_valid.append(mag_binned[0][j])
-    except:
-        print('Fallo:',i,len(ve_i),len(mag_binned[0]))
-        
-hst_trimB = hst_center[ve_i_valid]
-H_trimm, Ks_trimm = gns_match[:,20][ve_i_valid],gns_match[:,22][ve_i_valid]
-pm = np.array([hst_trimB['Ra'],	hst_trimB['Dec'], hst_trimB['x0_final'],hst_trimB['y0_final'],
-                   hst_trimB['vx_final'], hst_trimB['vy_final'],	hst_trimB['vxe_final'],	hst_trimB['vye_final'],
-                   pm_gal.l.value[ve_i_valid],
-                   pm_gal.b.value[ve_i_valid],
-                   pm_gal.pm_l_cosb.value[ve_i_valid],
-                   pm_gal.pm_b.value[ve_i_valid],
-                   H_trimm, Ks_trimm]).T
-np.savetxt(pruebas + 'hosek_center_trimB.txt',pm,fmt = '%.8f', header = 'Ra Dec x y vx_final vy_final vxe_final vxe_final l b mul mub H Ks') 
+elif trimm_way == 'B':
+    # Here the data is trimming by magnitudes bins
+    vxy_e = np.sqrt(hst_center['vxe_final']**2 + hst_center['vye_final']**2)
+    ve_i_valid = []
+    paso = 1
+    vx_lim = 0.0025
+    perc_good = 85
+    mag_b=np.digitize(hst_center['F139M_ave'], np.arange(np.round(min(hst_center['F139M_ave'])),np.round(max(hst_center['F139M_ave'])+1),paso), right=True)
+    
+    for i in range(min(mag_b),(max(mag_b)+1)):
+        try:
+            mag_binned=np.where(mag_b==i)
+            ve_i=vxy_e[mag_binned]
+            print('%.5f'%(np.percentile(ve_i,perc_good)),i,len(ve_i),len(mag_binned[0]))
+            perc = np.percentile(ve_i,perc_good)
+            for j in range(len(ve_i)):
+                if ve_i[j] < vx_lim:
+                    if ve_i[j] <= perc or ve_i[j] <= 0.002:
+                        ve_i_valid.append(mag_binned[0][j])
+        except:
+            print('Fallo:',i,len(ve_i),len(mag_binned[0]))
+            
+    hst_trimB = hst_center[ve_i_valid]
+    H_trimm, Ks_trimm = gns_match[:,20][ve_i_valid],gns_match[:,22][ve_i_valid]
+    pm = np.array([hst_trimB['Ra'],	hst_trimB['Dec'], hst_trimB['x0_final'],hst_trimB['y0_final'],
+                       hst_trimB['vx_final'], hst_trimB['vy_final'],	hst_trimB['vxe_final'],	hst_trimB['vye_final'],
+                       pm_gal.l.value[ve_i_valid],
+                       pm_gal.b.value[ve_i_valid],
+                       pm_gal.pm_l_cosb.value[ve_i_valid],
+                       pm_gal.pm_b.value[ve_i_valid],
+                       H_trimm, Ks_trimm]).T
+    np.savetxt(pruebas + 'hosek_center_trimB.txt',pm,fmt = '%.8f', header = 'Ra Dec x y vx_final vy_final vxe_final vxe_final l b mul mub H Ks') 
 
 # %
-fig, ax = plt.subplots(1,2, figsize = (20,10))
-bins=30
-ax[0].hist(pm_gal.pm_l_cosb.value[ve_i_valid], bins=bins,
-           label = '$\overline{\mu_{l}}$ =%.3f\n$\sigma_{l}$ =%.3f'%(np.mean(pm_gal.pm_l_cosb.value[ve_i_valid]),np.std(pm_gal.pm_l_cosb.value[ve_i_valid])))
-ax[1].hist(pm_gal.pm_b.value[ve_i_valid], bins=bins,
-           label = '$\overline{\mu_{b}}$ =%.3f\n$\sigma_{b}$ =%.3f'%(np.mean(pm_gal.pm_b.value[ve_i_valid]),np.std(pm_gal.pm_b.value[ve_i_valid])))
-ax[0].axvline(np.mean(pm_gal.pm_l_cosb.value[ve_i_valid]), color ='red')
-ax[1].axvline(np.mean(pm_gal.pm_b.value[ve_i_valid]), color ='red')
-ax[0].legend()
-ax[1].legend()
-ax[0].set_title('Center Stars: %s. After trimming: %s'%(len(hst_center),len(ve_i_valid)))
+    fig, ax = plt.subplots(1,2, figsize = (20,10))
+    bins=30
+    ax[0].hist(pm_gal.pm_l_cosb.value[ve_i_valid], bins=bins,
+               label = '$\overline{\mu_{l}}$ =%.3f\n$\sigma_{l}$ =%.3f'%(np.mean(pm_gal.pm_l_cosb.value[ve_i_valid]),np.std(pm_gal.pm_l_cosb.value[ve_i_valid])))
+    ax[1].hist(pm_gal.pm_b.value[ve_i_valid], bins=bins,
+               label = '$\overline{\mu_{b}}$ =%.3f\n$\sigma_{b}$ =%.3f'%(np.mean(pm_gal.pm_b.value[ve_i_valid]),np.std(pm_gal.pm_b.value[ve_i_valid])))
+    ax[0].axvline(np.mean(pm_gal.pm_l_cosb.value[ve_i_valid]), color ='red')
+    ax[1].axvline(np.mean(pm_gal.pm_b.value[ve_i_valid]), color ='red')
+    ax[0].legend()
+    ax[1].legend()
+    ax[0].set_title('Center Stars: %s. After trimming: %s'%(len(hst_center),len(ve_i_valid)))
 # %%
-alpha =1
-fig, ax = plt.subplots(1,2,figsize=(20,10))
-ax[0].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vxe_final'][pm_gal_ecut], alpha = alpha)
-ax[0].set_ylabel('error_vx (arscec/yr)')
-ax[0].set_xlabel('F139M')
-ax[1].scatter(hst_center['F139M_ave'][pm_gal_ecut],hst_center['vye_final'][pm_gal_ecut], alpha = alpha)
-ax[1].set_ylabel('error_vy (arscec/yr)')
-ax[1].set_xlabel('F139M')
+
 # %%
 clust_cand = np.loadtxt('/Users/amartinez/Desktop/PhD/Libralato_data/good_clusters/Sec_B_dmu1_at_minimun_2022-08-30_cluster_num32_2_knn10_area7.49/cluster32_0_0_knn_10_area_7.49_all_color.txt')
 cand_coord = SkyCoord(ra = clust_cand[:,0]*u.deg, dec = clust_cand[:,1]*u.deg, frame ='icrs', equinox = 'J2000', obstime = 'J2015.5')
@@ -191,10 +206,10 @@ color = pd.read_csv('/Users/amartinez/Desktop/PhD/python/colors_html.csv')
 strin= color.values.tolist()
 indices = np.arange(0,len(strin),1)
 # divis_list = [1,2,3]#TODO
-divis_list = [1,2]#TODO
+divis_list = [1]#TODO
 
-samples_list =[10,9,8,7,6,5]#TODO
-# samples_list =[8]#TODO
+# samples_list =[10,9,8,7,6,5]#TODO
+samples_list =[15,14,13,12,11,10,9,8,7,6,5,4,3]#TODO
 sim_lim = 'mean'#TODO options: minimun or mean
 gen_sim ='Kernnel'#TODO it is not yet implemented shuffle
 clustered_by = 'pm_color'#Reminiscent of a previous script
@@ -203,7 +218,7 @@ clus_num = 0
 
 m = (18-108)/(-100.3-1)#Points of a parallel line to the edge of the data
 m1 = (-88 - 7)/(-23--102)
-lim_pos_up, lim_pos_down = 18-m*(-100.3), -65 #intersection of the positives slopes lines with y axis,
+lim_pos_up, lim_pos_down = 18-m*(-100.3), -75 #intersection of the positives slopes lines with y axis,
 lim_neg_up, lim_neg_down =110,-88-m1*(-23) #intersection of the negayives slopes lines with y axis,
 
 # distancia entre yg_up e yg_down
@@ -211,32 +226,54 @@ dist_pos = abs(lim_pos_down-lim_pos_up)/np.sqrt((m)**2+(-1)**2)
 dist_neg = abs(lim_neg_down-lim_neg_up)/np.sqrt((m1)**2+(-1)**2)
 ang = math.degrees(np.arctan(m))
 ang1 = math.degrees(np.arctan(m1))
-sys.exit()
+x_box_lst = [1]
 #   0  1  2 3   4          5        6         7     8 9 10  11 12 13
 # 'Ra Dec x y vx_final vy_final vxe_final vxe_final l b mul mub H Ks'
-for div in range(len(divis_list)):
-    divis = divis_list[div]
-    xg = np.linspace(min(pm[:,2]),max(pm[:,2]),(divis+1)*2-1)
-    yg = np.linspace(min(pm[:,3]),max(pm[:,3]),(divis+1)*2-1)
+
+for x_box in x_box_lst:
+    step = dist_pos /x_box
+    step_neg =dist_neg/x_box
     for sd in range(len(samples_list)):
         samples_dist = samples_list[sd]
-        for xi in range(len(xg)-2):
-            for yi in range(len(xg)-2):
-                fig, ax = plt.subplots(1,1)
-                ax.scatter(pm[:,2],pm[:,3],color ='k',alpha=0.1)
-                valid = np.where((pm[:,2] < xg[xi+2])
-                                 & (pm[:,2] >xg[xi]) 
-                                 & (pm[:,3] < yg[yi+2]) 
-                                 & (pm[:,3] >yg[yi]))
-                pm_sub = pm[valid]
-                ax.scatter(pm_sub[:,2],pm_sub[:,3],s =5,color=strin[np.random.choice(indices)] )
-                coordenadas = SkyCoord(ra=pm_sub[:,0]*u.degree, dec=pm_sub[:,1]*u.degree,frame ='icrs', equinox = 'J2000', obstime = 'J2015.6')#
-                mul,mub = pm_sub[:,8],pm_sub[:,9]
-                x,y = pm_sub[:,2], pm_sub[:,3]
-                colorines = pm_sub[:,10]-pm_sub[:,11]
-                H_datos, K_datos = pm_sub[:,10], pm_sub[:,11]
+        for ic in range(x_box*2-1):
+           
+            ic *= 0.5
+            yg_1 = (lim_pos_up - (ic)*step/np.cos(ang*u.deg)) +  m*pm[:,2]
+         
+            yg_2 = (lim_pos_up - (ic+1)*step/np.cos(ang*u.deg)) +  m*pm[:,2]
+            ax.plot(pm[:,2],yg_1, color ='g')
+            ax.plot(pm[:,2],yg_2, color ='g')
+            
+            for jr in range(x_box*2-1):
+                fig, ax = plt.subplots(1,1,figsize =(10,10))
+                ax.scatter(pm[:,2],pm[:,3], alpha = 0.1)
+                jr *=0.5
+                yr_1 = (lim_neg_up - (jr)*step_neg/np.cos(ang1*u.deg)) +  m1*pm[:,2]
+                # yg_2 = (lim_pos_up - (i+1)*step*np.cos(45*u.deg)) +  m*catal[:,7]
+                yr_2 = (lim_neg_up - (jr+1)*step_neg/np.cos(ang1*u.deg)) +  m1*pm[:,2]
+                good = np.where((pm[:,3]<yg_1)&(pm[:,3]>yg_2)
+                                        & (pm[:,3]<yr_1)&(pm[:,3]>yr_2))
+                area = step*step_neg*0.05**2/3600
                 
-                area = (xg[xi+1]- xg[xi])*(yg[yi+1]- yg[yi])*0.05**2/3600
+                      
+                ax.scatter(pm[:,2][good],pm[:,3][good],color =strin[np.random.choice(indices)],alpha = 0.1)
+                props = dict(boxstyle='round', facecolor='w', alpha=1)
+                # place a text box in upper left in axes coords
+                txt ='central box ~ %.3f arcmin$^{2}$'%(area)
+                ax.text(0.65, 0.95, txt, transform=ax.transAxes, fontsize=14,
+                    verticalalignment='top', bbox=props)
+                ax.set_xlabel('x (50 mas/pix)')
+                ax.set_ylabel('y (50 mas/pix)')
+                plt.show()
+                
+                pm_sub = pm[good]
+                coordenadas = SkyCoord(ra=pm_sub[:,0]*u.degree, dec=pm_sub[:,1]*u.degree,frame ='icrs', equinox = 'J2000', obstime = 'J2015.6')#
+                mul,mub = pm_sub[:,10],pm_sub[:,11]
+                x,y = pm_sub[:,2], pm_sub[:,3]
+                colorines = pm_sub[:,12]-pm_sub[:,13]
+                H_datos, K_datos = pm_sub[:,12], pm_sub[:,13]
+                
+                
                 mul_kernel, mub_kernel = gaussian_kde(mul), gaussian_kde(mub)
                 x_kernel, y_kernel = gaussian_kde(x), gaussian_kde(y)
                 color_kernel = gaussian_kde(colorines)
@@ -375,7 +412,7 @@ for div in range(len(divis_list)):
                     ax[1].set_ylabel('Dec(deg)',fontsize =30) 
                     ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
                     ax[1].xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-                    ax[1].set_title('Area_%s_%s =%.2f $arcmin^{2}$'%(xi,yi,area))
+                    # ax[1].set_title('Area_%s_%s =%.2f $arcmin^{2}$'%(xi,yi,area))
                     
                     for cand_star in range(len(cand_coord)):
                         sep_cand = c2.separation(cand_coord[cand_star])
@@ -389,7 +426,7 @@ for div in range(len(divis_list)):
 
 
 
-
+print(hst_trim['x_orig'][:,0])
 
 
 
